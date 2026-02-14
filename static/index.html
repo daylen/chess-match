@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chess Engine Match</title>
+<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; display: flex; justify-content: center; padding: 20px; min-height: 100vh; }
+.container { display: flex; gap: 24px; max-width: 1200px; width: 100%; align-items: flex-start; }
+.board-col { display: flex; flex-direction: column; gap: 8px; }
+.player-row { display: flex; align-items: center; gap: 12px; }
+.player-info { flex: 1; min-width: 0; }
+.player-label { font-size: 13px; color: #888; margin-bottom: 2px; }
+.clock { font-size: 28px; font-weight: bold; font-family: 'Courier New', monospace; background: #16213e; padding: 10px 16px; border-radius: 8px; text-align: center; min-width: 130px; }
+.clock.active { background: #0f3460; color: #fff; }
+.clock.timeout { color: #e74c3c; }
+.engine-eval { font-size: 15px; font-weight: bold; font-family: 'Courier New', monospace; color: #4fc3f7; }
+.engine-pv { font-size: 12px; font-family: 'Courier New', monospace; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; margin-top: 2px; }
+.engine-depth { font-size: 11px; color: #555; }
+#board { width: 480px; }
+.panel { background: #16213e; border-radius: 12px; padding: 20px; width: 320px; display: flex; flex-direction: column; gap: 14px; }
+.panel h2 { font-size: 18px; color: #e94560; }
+label { font-size: 13px; color: #aaa; display: block; margin-bottom: 4px; }
+input[type="text"] { width: 100%; padding: 8px 10px; border: 1px solid #333; border-radius: 6px; background: #0f3460; color: #e0e0e0; font-size: 14px; }
+input[type="text"]:focus { outline: none; border-color: #e94560; }
+.btn-row { display: flex; gap: 8px; }
+button { padding: 10px 18px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+.btn-start { background: #e94560; color: #fff; flex: 1; }
+.btn-start:hover { background: #c73e54; }
+.btn-start:disabled { background: #555; cursor: not-allowed; }
+.btn-stop { background: #333; color: #e0e0e0; }
+.btn-stop:hover { background: #444; }
+.btn-flip { background: #333; color: #e0e0e0; }
+.btn-flip:hover { background: #444; }
+#result { font-size: 16px; font-weight: bold; color: #e94560; min-height: 24px; text-align: center; }
+#moves { background: #0f3460; border-radius: 8px; padding: 12px; font-family: 'Courier New', monospace; font-size: 13px; max-height: 360px; overflow-y: auto; line-height: 1.8; flex: 1; min-height: 100px; }
+#status { font-size: 13px; color: #888; text-align: center; }
+.move-number { color: #888; }
+.eval-positive { color: #4fc3f7; }
+.eval-negative { color: #ef5350; }
+.eval-even { color: #888; }
+.eval-mate { color: #ffd740; }
+.wdl-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 3px; max-width: 320px; }
+.wdl-bar .wdl-w { background: #e0e0e0; }
+.wdl-bar .wdl-d { background: #888; }
+.wdl-bar .wdl-l { background: #333; }
+.wdl-text { font-size: 11px; font-family: 'Courier New', monospace; color: #888; margin-top: 1px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="board-col">
+    <div class="player-row">
+      <div class="player-info">
+        <div class="player-label" id="top-label">Black</div>
+        <div class="engine-eval" id="eval-top">0.00</div>
+        <div class="wdl-bar" id="wdl-bar-top"><div class="wdl-w" style="width:33%"></div><div class="wdl-d" style="width:34%"></div><div class="wdl-l" style="width:33%"></div></div>
+        <div class="wdl-text" id="wdl-text-top"></div>
+        <div class="engine-pv" id="pv-top"></div>
+      </div>
+      <div class="clock" id="clock-top">0:00</div>
+    </div>
+    <div id="board"></div>
+    <div class="player-row">
+      <div class="player-info">
+        <div class="player-label" id="bottom-label">White</div>
+        <div class="engine-eval" id="eval-bottom">0.00</div>
+        <div class="wdl-bar" id="wdl-bar-bottom"><div class="wdl-w" style="width:33%"></div><div class="wdl-d" style="width:34%"></div><div class="wdl-l" style="width:33%"></div></div>
+        <div class="wdl-text" id="wdl-text-bottom"></div>
+        <div class="engine-pv" id="pv-bottom"></div>
+      </div>
+      <div class="clock" id="clock-bottom">0:00</div>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Engine Match</h2>
+    <div>
+      <label>Engine 1 (White)</label>
+      <input type="text" id="engine1" placeholder="/path/to/stockfish-new">
+    </div>
+    <div>
+      <label>Engine 2 (Black)</label>
+      <input type="text" id="engine2" placeholder="/path/to/stockfish-old">
+    </div>
+    <div>
+      <label>Time Control (e.g. 3+0, 1+1, 0.5+0)</label>
+      <input type="text" id="timecontrol" value="3+0">
+    </div>
+    <div style="display:flex;gap:8px">
+      <div style="flex:1">
+        <label>Threads</label>
+        <input type="text" id="threads" value="2">
+      </div>
+      <div style="flex:1">
+        <label>Hash (MB)</label>
+        <input type="text" id="hash" value="1024">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-start" id="btn-start" onclick="startMatch()">Start</button>
+      <button class="btn-stop" onclick="stopMatch()">Stop</button>
+      <button class="btn-flip" onclick="flipBoard()">Flip</button>
+    </div>
+    <div id="opening" style="font-size:13px;color:#4fc3f7;text-align:center;min-height:18px;"></div>
+    <div id="result"></div>
+    <div id="moves"></div>
+    <div id="status">Disconnected</div>
+  </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script>
+let board, ws, orientation = 'white', gameActive = false;
+
+// Live clock state
+let clockState = {
+  wtime: 0, btime: 0,
+  turn: 'white',
+  clockTs: null,       // server timestamp when clocks were snapshotted
+  localTs: null,       // local Date.now() when we received that snapshot
+};
+let clockInterval = null;
+
+function initBoard() {
+  board = Chessboard('board', {
+    position: 'start',
+    pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+    orientation: orientation,
+    appearSpeed: 150,
+    moveSpeed: 150,
+  });
+}
+
+function formatClock(seconds) {
+  if (seconds <= 0) return '0:00.0';
+  let m = Math.floor(seconds / 60);
+  let s = seconds % 60;
+  if (seconds < 10) return m + ':' + s.toFixed(1).padStart(4, '0');
+  return m + ':' + Math.floor(s).toString().padStart(2, '0');
+}
+
+function getLiveClocks() {
+  let wt = clockState.wtime;
+  let bt = clockState.btime;
+  if (clockState.localTs && gameActive) {
+    let elapsed = (Date.now() - clockState.localTs) / 1000;
+    if (clockState.turn === 'white') {
+      wt = Math.max(0, wt - elapsed);
+    } else {
+      bt = Math.max(0, bt - elapsed);
+    }
+  }
+  return { wt, bt };
+}
+
+function renderClocks() {
+  let { wt, bt } = getLiveClocks();
+  let topTime, bottomTime, topActive, bottomActive;
+  if (orientation === 'white') {
+    topTime = bt; bottomTime = wt;
+    topActive = clockState.turn === 'black'; bottomActive = clockState.turn === 'white';
+  } else {
+    topTime = wt; bottomTime = bt;
+    topActive = clockState.turn === 'white'; bottomActive = clockState.turn === 'black';
+  }
+  const ct = document.getElementById('clock-top');
+  const cb = document.getElementById('clock-bottom');
+  ct.textContent = formatClock(topTime);
+  cb.textContent = formatClock(bottomTime);
+  ct.className = 'clock' + (topActive && gameActive ? ' active' : '') + (topTime <= 0 ? ' timeout' : '');
+  cb.className = 'clock' + (bottomActive && gameActive ? ' active' : '') + (bottomTime <= 0 ? ' timeout' : '');
+}
+
+function startClockInterval() {
+  if (clockInterval) clearInterval(clockInterval);
+  clockInterval = setInterval(renderClocks, 100);
+}
+
+function stopClockInterval() {
+  if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
+}
+
+function formatEvalHtml(evalStr) {
+  if (!evalStr) return '<span class="eval-even">0.00</span>';
+  if (evalStr.startsWith('M')) {
+    return '<span class="eval-mate">' + evalStr + '</span>';
+  }
+  let val = parseFloat(evalStr);
+  if (isNaN(val)) return '<span class="eval-even">' + evalStr + '</span>';
+  let cls = val > 0.15 ? 'eval-positive' : val < -0.15 ? 'eval-negative' : 'eval-even';
+  return '<span class="' + cls + '">' + evalStr + '</span>';
+}
+
+function renderWdl(barId, textId, wdl) {
+  // wdl: [wins, draws, losses] from white's perspective, or null
+  const bar = document.getElementById(barId);
+  const text = document.getElementById(textId);
+  if (!wdl) {
+    bar.style.display = 'none';
+    text.textContent = '';
+    return;
+  }
+  bar.style.display = 'flex';
+  let total = wdl[0] + wdl[1] + wdl[2];
+  if (total === 0) total = 1;
+  let wp = (wdl[0] / total * 100);
+  let dp = (wdl[1] / total * 100);
+  let lp = (wdl[2] / total * 100);
+  bar.innerHTML = '<div class="wdl-w" style="width:' + wp + '%"></div>' +
+    '<div class="wdl-d" style="width:' + dp + '%"></div>' +
+    '<div class="wdl-l" style="width:' + lp + '%"></div>';
+  text.textContent = 'W ' + wp.toFixed(1) + '%  D ' + dp.toFixed(1) + '%  L ' + lp.toFixed(1) + '%';
+}
+
+function updateEngineInfo(engineInfo) {
+  // engineInfo: [{eval, pv, depth, wdl}, ...] for [white, black]
+  let topSide, bottomSide;
+  if (orientation === 'white') {
+    topSide = 1; bottomSide = 0;
+  } else {
+    topSide = 0; bottomSide = 1;
+  }
+  let topInfo = engineInfo[topSide];
+  let bottomInfo = engineInfo[bottomSide];
+
+  document.getElementById('eval-top').innerHTML = formatEvalHtml(topInfo.eval) +
+    ' <span class="engine-depth">d' + topInfo.depth + '</span>';
+  document.getElementById('pv-top').textContent = topInfo.pv || '';
+  renderWdl('wdl-bar-top', 'wdl-text-top', topInfo.wdl);
+
+  document.getElementById('eval-bottom').innerHTML = formatEvalHtml(bottomInfo.eval) +
+    ' <span class="engine-depth">d' + bottomInfo.depth + '</span>';
+  document.getElementById('pv-bottom').textContent = bottomInfo.pv || '';
+  renderWdl('wdl-bar-bottom', 'wdl-text-bottom', bottomInfo.wdl);
+}
+
+function updateThinkingSide(side, evalStr, pv, depth, wdl) {
+  // side: 0=white, 1=black
+  let pos;
+  if (orientation === 'white') {
+    pos = side === 1 ? 'top' : 'bottom';
+  } else {
+    pos = side === 0 ? 'top' : 'bottom';
+  }
+  document.getElementById('eval-' + pos).innerHTML = formatEvalHtml(evalStr) +
+    ' <span class="engine-depth">d' + depth + '</span>';
+  document.getElementById('pv-' + pos).textContent = pv || '';
+  renderWdl('wdl-bar-' + pos, 'wdl-text-' + pos, wdl);
+}
+
+function updateLabels() {
+  document.getElementById('top-label').textContent = orientation === 'white' ? 'Black (Engine 2)' : 'White (Engine 1)';
+  document.getElementById('bottom-label').textContent = orientation === 'white' ? 'White (Engine 1)' : 'Black (Engine 2)';
+}
+
+function renderMoves(moves) {
+  const el = document.getElementById('moves');
+  let html = '';
+  for (let i = 0; i < moves.length; i += 2) {
+    let num = Math.floor(i / 2) + 1;
+    html += '<span class="move-number">' + num + '.</span> ' + moves[i];
+    if (i + 1 < moves.length) html += ' ' + moves[i + 1];
+    html += '  ';
+  }
+  el.innerHTML = html;
+  el.scrollTop = el.scrollHeight;
+}
+
+function connectWS() {
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(protocol + '//' + location.host + '/ws');
+  ws.onopen = () => { document.getElementById('status').textContent = 'Connected'; };
+  ws.onclose = () => {
+    document.getElementById('status').textContent = 'Disconnected';
+    gameActive = false;
+    stopClockInterval();
+    document.getElementById('btn-start').disabled = false;
+    setTimeout(connectWS, 2000);
+  };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'state') {
+      board.position(msg.fen, true);
+      // Update clock state for live ticking
+      clockState.wtime = msg.wtime;
+      clockState.btime = msg.btime;
+      clockState.turn = msg.turn;
+      clockState.localTs = Date.now();
+      renderClocks();
+      renderMoves(msg.moves);
+      if (msg.engine_info) updateEngineInfo(msg.engine_info);
+      if (msg.opening) document.getElementById('opening').textContent = msg.opening;
+      if (msg.result) {
+        document.getElementById('result').textContent = msg.result;
+        gameActive = false;
+        stopClockInterval();
+        document.getElementById('btn-start').disabled = false;
+      }
+    } else if (msg.type === 'thinking') {
+      updateThinkingSide(msg.side, msg.eval, msg.pv, msg.depth, msg.wdl);
+    } else if (msg.type === 'error') {
+      document.getElementById('result').textContent = 'Error: ' + msg.message;
+      gameActive = false;
+      stopClockInterval();
+      document.getElementById('btn-start').disabled = false;
+    }
+  };
+}
+
+function startMatch() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const engine1 = document.getElementById('engine1').value.trim();
+  const engine2 = document.getElementById('engine2').value.trim();
+  const tc = document.getElementById('timecontrol').value.trim();
+  if (!engine1 || !engine2) { alert('Enter both engine paths'); return; }
+  document.getElementById('result').textContent = '';
+  document.getElementById('opening').textContent = '';
+  document.getElementById('moves').innerHTML = '';
+  gameActive = true;
+  document.getElementById('btn-start').disabled = true;
+  startClockInterval();
+  const threads = parseInt(document.getElementById('threads').value) || 2;
+  const hash = parseInt(document.getElementById('hash').value) || 1024;
+  ws.send(JSON.stringify({ action: 'start', engine1, engine2, time: tc, threads, hash }));
+}
+
+function stopMatch() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'stop' }));
+  }
+  gameActive = false;
+  stopClockInterval();
+  document.getElementById('btn-start').disabled = false;
+}
+
+function flipBoard() {
+  orientation = orientation === 'white' ? 'black' : 'white';
+  board.flip();
+  updateLabels();
+  renderClocks();
+}
+
+$(document).ready(() => {
+  initBoard();
+  updateLabels();
+  let parts = (document.getElementById('timecontrol').value || '3+0').split('+');
+  let base = parseFloat(parts[0]) * 60;
+  clockState.wtime = base;
+  clockState.btime = base;
+  clockState.turn = 'white';
+  renderClocks();
+  connectWS();
+});
+</script>
+</body>
+</html>
