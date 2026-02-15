@@ -166,8 +166,9 @@ button { padding: 10px 18px; border: none; border-radius: 6px; font-size: 14px; 
     <div id="status">Disconnected</div>
   </div>
 </div>
-<div class="eval-chart-container">
+<div class="eval-chart-container" style="position:relative">
   <canvas id="eval-chart" width="1400" height="200"></canvas>
+  <div id="eval-tooltip" style="display:none;position:absolute;background:rgba(15,52,96,0.95);color:#e0e0e0;padding:6px 10px;border-radius:6px;font-size:12px;pointer-events:none;white-space:nowrap;border:1px solid #444;z-index:10;"></div>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
@@ -203,6 +204,7 @@ function navigateTo(idx) {
   drawArrows();
   renderMaterial(fen);
   renderMoveList();
+  drawEvalChart();
 }
 function goToLive() {
   viewIndex = -1;
@@ -219,6 +221,7 @@ function goToLive() {
     renderMaterial(fen);
   }
   renderMoveList();
+  drawEvalChart();
 }
 
 // --- Engine preferences (localStorage) ---
@@ -618,6 +621,9 @@ function parseEvalForChart(evalStr) {
   return isNaN(v) ? null : v;
 }
 
+// Saved chart layout for cursor/tooltip reuse
+let chartState = { pad: null, plotW: 0, plotH: 0, maxHalf: 1, maxEval: 3, W: 0, H: 0 };
+
 function drawEvalChart() {
   const canvas = document.getElementById('eval-chart');
   const ctx = canvas.getContext('2d');
@@ -642,6 +648,9 @@ function drawEvalChart() {
   );
   let maxEval = Math.max(3, ...allEvals.map(v => Math.abs(v)));
   maxEval = Math.min(maxEval, 15); // clamp display
+
+  // Save for cursor/tooltip
+  chartState = { pad, plotW, plotH, maxHalf, maxEval, W, H };
 
   function toX(halfMove) { return pad.left + (halfMove / maxHalf) * plotW; }
   function toY(ev) {
@@ -708,11 +717,89 @@ function drawEvalChart() {
   drawLine(evalHistory.white, '#e0e0e0');
   drawLine(evalHistory.black, '#555');
 
+  // Vertical cursor line for current move navigation position
+  let cursorHalf = isViewingLive() ? gameMoves.length : viewIndex;
+  if (cursorHalf > 0 && gameMoves.length > 0) {
+    let cx = toX(cursorHalf);
+    ctx.strokeStyle = 'rgba(233,69,96,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(cx, pad.top);
+    ctx.lineTo(cx, pad.top + plotH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   // Axis border
   ctx.strokeStyle = '#444';
   ctx.lineWidth = 1;
   ctx.strokeRect(pad.left, pad.top, plotW, plotH);
 }
+
+// --- Eval chart hover tooltip ---
+function chartHalfMoveFromX(mouseX) {
+  let { pad, plotW, maxHalf } = chartState;
+  if (!pad) return null;
+  let rel = mouseX - pad.left;
+  if (rel < 0 || rel > plotW) return null;
+  return Math.round((rel / plotW) * maxHalf);
+}
+
+function findNearestEval(halfMove) {
+  // Find data points at or nearest to this half-move
+  let all = [
+    ...evalHistory.white.map(d => ({ ...d, side: 'White' })),
+    ...evalHistory.black.map(d => ({ ...d, side: 'Black' })),
+  ];
+  // Exact match first
+  let exact = all.filter(d => d.halfMove === halfMove);
+  if (exact.length > 0) return exact;
+  // Nearest
+  if (all.length === 0) return [];
+  let minDist = Infinity;
+  all.forEach(d => { let dist = Math.abs(d.halfMove - halfMove); if (dist < minDist) minDist = dist; });
+  if (minDist > 2) return [];
+  return all.filter(d => Math.abs(d.halfMove - halfMove) === minDist);
+}
+
+(function() {
+  const canvas = document.getElementById('eval-chart');
+  const tooltip = document.getElementById('eval-tooltip');
+
+  canvas.addEventListener('mousemove', function(e) {
+    let rect = canvas.getBoundingClientRect();
+    let mouseX = e.clientX - rect.left;
+    let mouseY = e.clientY - rect.top;
+    let halfMove = chartHalfMoveFromX(mouseX);
+    if (halfMove === null || halfMove < 1) { tooltip.style.display = 'none'; return; }
+
+    let points = findNearestEval(halfMove);
+    if (points.length === 0) { tooltip.style.display = 'none'; return; }
+
+    let lines = points.map(p => {
+      let moveNum = Math.ceil(p.halfMove / 2);
+      let evalStr = (p.eval > 0 ? '+' : '') + p.eval.toFixed(2);
+      return p.side + ' move ' + moveNum + ': ' + evalStr;
+    });
+    tooltip.textContent = lines.join('\n');
+    tooltip.style.whiteSpace = 'pre';
+    tooltip.style.display = 'block';
+
+    // Position tooltip near cursor, keeping it within the container
+    let container = canvas.parentElement.getBoundingClientRect();
+    let tx = e.clientX - container.left + 12;
+    let ty = e.clientY - container.top - 10;
+    if (tx + 160 > container.width) tx = tx - 180;
+    if (ty < 0) ty = 4;
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top = ty + 'px';
+  });
+
+  canvas.addEventListener('mouseleave', function() {
+    tooltip.style.display = 'none';
+  });
+})();
 
 function connectWS() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
