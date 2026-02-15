@@ -10,6 +10,16 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+# Monkey-patch _parse_xboard_post to handle "..." (Black-to-move ellipsis)
+# that engines like Crafty include in their PV output.
+_original_parse_xboard_post = chess.engine._parse_xboard_post
+
+def _patched_parse_xboard_post(line, root_board, selector=chess.engine.INFO_ALL):
+    line = line.replace(" ... ", " ")
+    return _original_parse_xboard_post(line, root_board, selector)
+
+chess.engine._parse_xboard_post = _patched_parse_xboard_post
+
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -87,7 +97,7 @@ OPENINGS = [
 
 
 class Match:
-    def __init__(self, engine1_path: str, engine2_path: str, base_time: float, increment: float, ws: WebSocket, threads: int = 2, hash_mb: int = 1024, opening: tuple[str, list[str]] | None = None):
+    def __init__(self, engine1_path: str, engine2_path: str, base_time: float, increment: float, ws: WebSocket, threads: int = 2, hash_mb: int = 1024, opening: tuple[str, list[str]] | None = None, protocol1: str = "uci", protocol2: str = "uci"):
         self.engine1_path = engine1_path
         self.engine2_path = engine2_path
         self.base_time = base_time
@@ -103,6 +113,7 @@ class Match:
         self.running = False
         self.opening_name = ""
         self.engine_names = ["Engine 1", "Engine 2"]  # [white, black]
+        self.protocols = [protocol1, protocol2]  # [white, black]
 
         # Apply opening moves
         if opening:
@@ -183,21 +194,33 @@ class Match:
         engine1 = None
         engine2 = None
         try:
-            transport1, engine1 = await chess.engine.popen_uci(self.engine1_path)
-            transport2, engine2 = await chess.engine.popen_uci(self.engine2_path)
+            if self.protocols[0] == "cecp":
+                transport1, engine1 = await chess.engine.popen_xboard(self.engine1_path)
+            else:
+                transport1, engine1 = await chess.engine.popen_uci(self.engine1_path)
+            if self.protocols[1] == "cecp":
+                transport2, engine2 = await chess.engine.popen_xboard(self.engine2_path)
+            else:
+                transport2, engine2 = await chess.engine.popen_uci(self.engine2_path)
 
-            # Grab engine names from UCI id
+            # Grab engine names
             self.engine_names[0] = engine1.id.get("name", "Engine 1")
             self.engine_names[1] = engine2.id.get("name", "Engine 2")
 
-            for eng in [engine1, engine2]:
-                opts = {"Threads": self.threads, "Hash": self.hash_mb}
-                if "UCI_ShowWDL" in eng.options:
-                    opts["UCI_ShowWDL"] = True
-                try:
-                    await eng.configure(opts)
-                except chess.engine.EngineError:
+            for i, eng in enumerate([engine1, engine2]):
+                if self.protocols[i] == "cecp":
+                    # CECP engines have unreliable option support (e.g. Crafty
+                    # crashes if memory is set too high). Skip auto-configuration
+                    # and let the engine use its defaults.
                     pass
+                else:
+                    opts = {"Threads": self.threads, "Hash": self.hash_mb}
+                    if "UCI_ShowWDL" in eng.options:
+                        opts["UCI_ShowWDL"] = True
+                    try:
+                        await eng.configure(opts)
+                    except chess.engine.EngineError:
+                        pass
 
             engines = [engine1, engine2]  # [white, black]
 
@@ -224,10 +247,22 @@ class Match:
                     black_inc=self.increment,
                 )
 
+                is_cecp = self.protocols[side] == "cecp"
+                if is_cecp:
+                    # CECP analysis() doesn't support clock limits, so
+                    # compute a think time from the clocks (simple time
+                    # management: fraction of remaining + most of increment).
+                    my_clock = self.clocks[side]
+                    moves_to_go = 30
+                    think_time = max(0.1, my_clock / moves_to_go + self.increment * 0.9)
+                    # Don't use more than 50% of remaining time
+                    think_time = min(think_time, my_clock * 0.5)
+                    limit = chess.engine.Limit(time=think_time)
+
                 start = time.monotonic()
                 best_move = None
-                last_depth_sent = -1
                 try:
+                    last_depth_sent = -1
                     with await engine.analysis(self.board, limit) as analysis:
                         async for info in analysis:
                             if not self.running:
@@ -272,8 +307,15 @@ class Match:
                         best_move = analysis.info.get("pv", [None])[0] if "pv" in analysis.info else None
                         if best_move is None and hasattr(analysis, 'best'):
                             best_move = analysis.best.move if analysis.best else None
-                except chess.engine.EngineTerminatedError:
-                    await self.send_state(result="Engine crashed")
+                except chess.engine.EngineTerminatedError as e:
+                    import traceback
+                    traceback.print_exc()
+                    await self.send_state(result=f"Engine crashed: {e}")
+                    return
+                except chess.engine.EngineError as e:
+                    import traceback
+                    traceback.print_exc()
+                    await self.send_state(result=f"Engine error: {e}")
                     return
 
                 elapsed = time.monotonic() - start
@@ -315,6 +357,8 @@ class Match:
                 await self.send_state(result=result_str)
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             try:
                 await self.ws.send_json({"type": "error", "message": str(e)})
             except Exception:
@@ -364,7 +408,10 @@ async def websocket_endpoint(ws: WebSocket):
 
                 opening = random.choice(OPENINGS)
 
-                match = Match(engine1, engine2, base_time, increment, ws, threads, hash_mb, opening)
+                protocol1 = msg.get("protocol1", "uci")
+                protocol2 = msg.get("protocol2", "uci")
+
+                match = Match(engine1, engine2, base_time, increment, ws, threads, hash_mb, opening, protocol1, protocol2)
                 match_task = asyncio.create_task(match.run())
 
             elif action == "stop":

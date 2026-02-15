@@ -113,11 +113,17 @@ button { padding: 10px 18px; border: none; border-radius: 6px; font-size: 14px; 
     <h2>Engine Match</h2>
     <div>
       <label>Engine 1 (White)</label>
-      <select id="engine1"><option value="">-- select engine --</option></select>
+      <div style="display:flex;gap:6px">
+        <select id="engine1" style="flex:1"><option value="">-- select engine --</option></select>
+        <select id="protocol1" style="width:72px;flex:none"><option value="uci">UCI</option><option value="cecp">CECP</option></select>
+      </div>
     </div>
     <div>
       <label>Engine 2 (Black)</label>
-      <select id="engine2"><option value="">-- select engine --</option></select>
+      <div style="display:flex;gap:6px">
+        <select id="engine2" style="flex:1"><option value="">-- select engine --</option></select>
+        <select id="protocol2" style="width:72px;flex:none"><option value="uci">UCI</option><option value="cecp">CECP</option></select>
+      </div>
     </div>
     <div style="display:flex;gap:6px;align-items:end">
       <div style="flex:1">
@@ -127,6 +133,10 @@ button { padding: 10px 18px; border: none; border-radius: 6px; font-size: 14px; 
       <div style="flex:1">
         <label style="font-size:11px">Path</label>
         <input type="text" id="new-engine-path" placeholder="/path/to/engine">
+      </div>
+      <div>
+        <label style="font-size:11px">Protocol</label>
+        <select id="new-engine-protocol" style="width:72px"><option value="uci">UCI</option><option value="cecp">CECP</option></select>
       </div>
       <button onclick="addEngine()" style="padding:4px 10px;font-size:12px;cursor:pointer;background:#4caf50;color:#fff;border:none;border-radius:4px">+</button>
       <button onclick="removeEngine()" style="padding:4px 10px;font-size:12px;cursor:pointer;background:#ef5350;color:#fff;border:none;border-radius:4px">&minus;</button>
@@ -221,8 +231,9 @@ function saveEngines(engines) {
 }
 function populateEngineSelects() {
   const engines = getEngines();
-  ['engine1', 'engine2'].forEach(id => {
+  ['engine1', 'engine2'].forEach((id, idx) => {
     const sel = document.getElementById(id);
+    const protSel = document.getElementById('protocol' + (idx + 1));
     const cur = sel.value;
     sel.innerHTML = '<option value="">-- select engine --</option>';
     engines.forEach(e => {
@@ -232,21 +243,33 @@ function populateEngineSelects() {
       sel.appendChild(opt);
     });
     sel.value = cur; // restore selection if still valid
+    // Update protocol dropdown when engine changes
+    sel.onchange = function() {
+      const eng = engines.find(e => e.path === sel.value);
+      if (eng && eng.protocol) protSel.value = eng.protocol;
+      else protSel.value = 'uci';
+    };
+    // Set initial protocol
+    const eng = engines.find(e => e.path === cur);
+    if (eng && eng.protocol) protSel.value = eng.protocol;
   });
 }
 function addEngine() {
   const nameEl = document.getElementById('new-engine-name');
   const pathEl = document.getElementById('new-engine-path');
+  const protEl = document.getElementById('new-engine-protocol');
   const name = nameEl.value.trim();
   const path = pathEl.value.trim();
+  const protocol = protEl.value;
   if (!name || !path) { alert('Enter both engine name and path'); return; }
   const engines = getEngines();
   if (engines.some(e => e.name === name)) { alert('Engine with that name already exists'); return; }
-  engines.push({ name, path });
+  engines.push({ name, path, protocol });
   saveEngines(engines);
   populateEngineSelects();
   nameEl.value = '';
   pathEl.value = '';
+  protEl.value = 'uci';
 }
 function removeEngine() {
   const sel = document.getElementById('engine1');
@@ -788,7 +811,9 @@ function startMatch() {
   startClockInterval();
   const threads = parseInt(document.getElementById('threads').value) || 2;
   const hash = parseInt(document.getElementById('hash').value) || 1024;
-  ws.send(JSON.stringify({ action: 'start', engine1, engine2, time: tc, threads, hash }));
+  const protocol1 = document.getElementById('protocol1').value;
+  const protocol2 = document.getElementById('protocol2').value;
+  ws.send(JSON.stringify({ action: 'start', engine1, engine2, time: tc, threads, hash, protocol1, protocol2 }));
 }
 
 function stopMatch() {
