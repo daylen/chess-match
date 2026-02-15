@@ -7,24 +7,28 @@
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; display: flex; justify-content: center; padding: 20px; min-height: 100vh; }
-.container { display: flex; gap: 24px; max-width: 1200px; width: 100%; align-items: flex-start; }
-.board-col { display: flex; flex-direction: column; gap: 8px; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; padding: 20px; min-height: 100vh; }
+.container { display: flex; gap: 24px; max-width: 1400px; width: 100%; align-items: flex-start; }
+.board-col { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
 .player-row { display: flex; align-items: center; gap: 12px; }
 .player-info { flex: 1; min-width: 0; }
-.player-label { font-size: 13px; color: #888; margin-bottom: 2px; }
-.clock { font-size: 28px; font-weight: bold; font-family: 'Courier New', monospace; background: #16213e; padding: 10px 16px; border-radius: 8px; text-align: center; min-width: 130px; }
+.player-label { font-size: 14px; font-weight: 600; color: #ccc; margin-bottom: 2px; }
+.engine-stats { font-size: 12px; color: #888; margin-top: 1px; }
+.clock { font-size: 28px; font-weight: bold; background: #16213e; padding: 10px 16px; border-radius: 8px; text-align: center; min-width: 130px; font-variant-numeric: tabular-nums; }
 .clock.active { background: #0f3460; color: #fff; }
 .clock.timeout { color: #e74c3c; }
-.engine-eval { font-size: 15px; font-weight: bold; font-family: 'Courier New', monospace; color: #4fc3f7; }
-.engine-pv { font-size: 12px; font-family: 'Courier New', monospace; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; margin-top: 2px; }
+.engine-eval { font-size: 15px; font-weight: bold; color: #4fc3f7; font-variant-numeric: tabular-nums; }
 .engine-depth { font-size: 11px; color: #555; }
+.material-shelf { font-size: 18px; min-height: 24px; letter-spacing: 1px; line-height: 1.2; }
 #board { width: 480px; }
-.panel { background: #16213e; border-radius: 12px; padding: 20px; width: 320px; display: flex; flex-direction: column; gap: 14px; }
+/* Arrow overlay */
+.board-wrapper { position: relative; display: inline-block; width: 480px; }
+.board-arrow { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 100; }
+.panel { background: #16213e; border-radius: 12px; padding: 20px; width: 320px; display: flex; flex-direction: column; gap: 14px; flex-shrink: 0; }
 .panel h2 { font-size: 18px; color: #e94560; }
 label { font-size: 13px; color: #aaa; display: block; margin-bottom: 4px; }
-input[type="text"] { width: 100%; padding: 8px 10px; border: 1px solid #333; border-radius: 6px; background: #0f3460; color: #e0e0e0; font-size: 14px; }
-input[type="text"]:focus { outline: none; border-color: #e94560; }
+input[type="text"], select { width: 100%; padding: 8px 10px; border: 1px solid #333; border-radius: 6px; background: #0f3460; color: #e0e0e0; font-size: 14px; box-sizing: border-box; }
+input[type="text"]:focus, select:focus { outline: none; border-color: #e94560; }
 .btn-row { display: flex; gap: 8px; }
 button { padding: 10px 18px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
 .btn-start { background: #e94560; color: #fff; flex: 1; }
@@ -35,9 +39,12 @@ button { padding: 10px 18px; border: none; border-radius: 6px; font-size: 14px; 
 .btn-flip { background: #333; color: #e0e0e0; }
 .btn-flip:hover { background: #444; }
 #result { font-size: 16px; font-weight: bold; color: #e94560; min-height: 24px; text-align: center; }
-#moves { background: #0f3460; border-radius: 8px; padding: 12px; font-family: 'Courier New', monospace; font-size: 13px; max-height: 360px; overflow-y: auto; line-height: 1.8; flex: 1; min-height: 100px; }
+#moves { background: #0f3460; border-radius: 8px; padding: 12px; font-size: 13px; max-height: 360px; overflow-y: auto; line-height: 1.8; flex: 1; min-height: 100px; }
 #status { font-size: 13px; color: #888; text-align: center; }
 .move-number { color: #888; }
+.move-link { cursor: pointer; padding: 1px 3px; border-radius: 3px; }
+.move-link:hover { background: #0f3460; }
+.move-active { background: #e94560; color: #fff; border-radius: 3px; }
 .eval-positive { color: #4fc3f7; }
 .eval-negative { color: #ef5350; }
 .eval-even { color: #888; }
@@ -46,7 +53,20 @@ button { padding: 10px 18px; border: none; border-radius: 6px; font-size: 14px; 
 .wdl-bar .wdl-w { background: #e0e0e0; }
 .wdl-bar .wdl-d { background: #888; }
 .wdl-bar .wdl-l { background: #333; }
-.wdl-text { font-size: 11px; font-family: 'Courier New', monospace; color: #888; margin-top: 1px; }
+.wdl-text { font-size: 11px; color: #888; margin-top: 1px; }
+.pv-col { display: flex; flex-direction: column; gap: 8px; min-width: 280px; max-width: 400px; flex: 1; }
+.pv-section { flex: 1; display: flex; flex-direction: column; }
+.pv-section label { font-size: 13px; color: #aaa; margin-bottom: 4px; }
+.pv-history { background: #0f3460; border-radius: 8px; padding: 8px 10px; font-size: 11px; color: #aaa; max-height: 240px; min-height: 120px; overflow-y: auto; line-height: 1.5; flex: 1; }
+.pv-entry { margin-bottom: 4px; }
+.pv-meta { font-size: 10px; color: #666; }
+.pv-moves { white-space: pre-wrap; }
+.pv-entry.improving .pv-meta, .pv-entry.improving .pv-moves { color: #4caf50; }
+.pv-entry.worsening .pv-meta, .pv-entry.worsening .pv-moves { color: #ef5350; }
+.pv-entry.neutral .pv-meta { color: #666; }
+.pv-entry.neutral .pv-moves { color: #aaa; }
+.eval-chart-container { max-width: 1400px; width: 100%; margin: 16px auto 0; background: #16213e; border-radius: 12px; padding: 12px; }
+#eval-chart { width: 100%; height: 200px; display: block; }
 </style>
 </head>
 <body>
@@ -56,33 +76,60 @@ button { padding: 10px 18px; border: none; border-radius: 6px; font-size: 14px; 
       <div class="player-info">
         <div class="player-label" id="top-label">Black</div>
         <div class="engine-eval" id="eval-top">0.00</div>
-        <div class="wdl-bar" id="wdl-bar-top"><div class="wdl-w" style="width:33%"></div><div class="wdl-d" style="width:34%"></div><div class="wdl-l" style="width:33%"></div></div>
+        <div class="wdl-bar" id="wdl-bar-top" style="display:none"></div>
         <div class="wdl-text" id="wdl-text-top"></div>
-        <div class="engine-pv" id="pv-top"></div>
+        <div class="engine-stats" id="stats-top"></div>
+        <div class="material-shelf" id="material-top"></div>
       </div>
       <div class="clock" id="clock-top">0:00</div>
     </div>
-    <div id="board"></div>
+    <div class="board-wrapper">
+      <div id="board" style="width:480px;height:480px;"></div>
+      <svg id="arrow-svg" class="board-arrow" width="480" height="480" viewBox="0 0 480 480" style="position:absolute;top:0;left:0;width:480px;height:480px;pointer-events:none;z-index:100;"></svg>
+    </div>
     <div class="player-row">
       <div class="player-info">
         <div class="player-label" id="bottom-label">White</div>
         <div class="engine-eval" id="eval-bottom">0.00</div>
-        <div class="wdl-bar" id="wdl-bar-bottom"><div class="wdl-w" style="width:33%"></div><div class="wdl-d" style="width:34%"></div><div class="wdl-l" style="width:33%"></div></div>
+        <div class="wdl-bar" id="wdl-bar-bottom" style="display:none"></div>
         <div class="wdl-text" id="wdl-text-bottom"></div>
-        <div class="engine-pv" id="pv-bottom"></div>
+        <div class="engine-stats" id="stats-bottom"></div>
+        <div class="material-shelf" id="material-bottom"></div>
       </div>
       <div class="clock" id="clock-bottom">0:00</div>
+    </div>
+  </div>
+  <div class="pv-col">
+    <div class="pv-section">
+      <label id="pv-label-top">Black PV</label>
+      <div class="pv-history" id="pv-history-top"></div>
+    </div>
+    <div class="pv-section">
+      <label id="pv-label-bottom">White PV</label>
+      <div class="pv-history" id="pv-history-bottom"></div>
     </div>
   </div>
   <div class="panel">
     <h2>Engine Match</h2>
     <div>
       <label>Engine 1 (White)</label>
-      <input type="text" id="engine1" placeholder="/path/to/stockfish-new">
+      <select id="engine1"><option value="">-- select engine --</option></select>
     </div>
     <div>
       <label>Engine 2 (Black)</label>
-      <input type="text" id="engine2" placeholder="/path/to/stockfish-old">
+      <select id="engine2"><option value="">-- select engine --</option></select>
+    </div>
+    <div style="display:flex;gap:6px;align-items:end">
+      <div style="flex:1">
+        <label style="font-size:11px">Name</label>
+        <input type="text" id="new-engine-name" placeholder="Stockfish 17">
+      </div>
+      <div style="flex:1">
+        <label style="font-size:11px">Path</label>
+        <input type="text" id="new-engine-path" placeholder="/path/to/engine">
+      </div>
+      <button onclick="addEngine()" style="padding:4px 10px;font-size:12px;cursor:pointer;background:#4caf50;color:#fff;border:none;border-radius:4px">+</button>
+      <button onclick="removeEngine()" style="padding:4px 10px;font-size:12px;cursor:pointer;background:#ef5350;color:#fff;border:none;border-radius:4px">&minus;</button>
     </div>
     <div>
       <label>Time Control (e.g. 3+0, 1+1, 0.5+0)</label>
@@ -109,20 +156,117 @@ button { padding: 10px 18px; border: none; border-radius: 6px; font-size: 14px; 
     <div id="status">Disconnected</div>
   </div>
 </div>
+<div class="eval-chart-container">
+  <canvas id="eval-chart" width="1400" height="200"></canvas>
+</div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 <script>
 let board, ws, orientation = 'white', gameActive = false;
+let engineNames = ['Engine 1', 'Engine 2'];
+// Baseline POV eval per side — set from the engine's final eval on the *previous* move
+let baselineEvalPov = [null, null];
 
-// Live clock state
-let clockState = {
-  wtime: 0, btime: 0,
-  turn: 'white',
-  clockTs: null,       // server timestamp when clocks were snapshotted
-  localTs: null,       // local Date.now() when we received that snapshot
-};
+// Eval chart data: arrays of {move, eval} per side
+let evalHistory = { white: [], black: [] };
+let moveCounter = 0;
+
+// Move navigation state
+let gameFens = [];      // fens[0] = start position, fens[i] = position after move i
+let gameMoves = [];     // SAN moves
+let gameMoveUcis = [];  // UCI moves
+let viewIndex = -1;     // -1 means "follow live", otherwise 0..gameMoves.length
+function isViewingLive() { return viewIndex === -1 || viewIndex === gameMoves.length; }
+function navigateTo(idx) {
+  idx = Math.max(0, Math.min(idx, gameMoves.length));
+  viewIndex = idx;
+  let fen = gameFens[idx];
+  if (fen) board.position(fen, false);
+  // Update arrow for viewed position
+  if (idx > 0 && gameMoveUcis[idx - 1]) {
+    lastMoveUci = gameMoveUcis[idx - 1];
+  } else {
+    lastMoveUci = null;
+  }
+  thinkingMoveUci = null;
+  drawArrows();
+  renderMaterial(fen);
+  renderMoveList();
+}
+function goToLive() {
+  viewIndex = -1;
+  if (gameFens.length > 0) {
+    let fen = gameFens[gameFens.length - 1];
+    board.position(fen, false);
+    if (gameMoveUcis.length > 0) {
+      lastMoveUci = gameMoveUcis[gameMoveUcis.length - 1];
+    } else {
+      lastMoveUci = null;
+    }
+    thinkingMoveUci = null;
+    drawArrows();
+    renderMaterial(fen);
+  }
+  renderMoveList();
+}
+
+// --- Engine preferences (localStorage) ---
+function getEngines() {
+  try { return JSON.parse(localStorage.getItem('chess_engines') || '[]'); }
+  catch { return []; }
+}
+function saveEngines(engines) {
+  localStorage.setItem('chess_engines', JSON.stringify(engines));
+}
+function populateEngineSelects() {
+  const engines = getEngines();
+  ['engine1', 'engine2'].forEach(id => {
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">-- select engine --</option>';
+    engines.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e.path;
+      opt.textContent = e.name;
+      sel.appendChild(opt);
+    });
+    sel.value = cur; // restore selection if still valid
+  });
+}
+function addEngine() {
+  const nameEl = document.getElementById('new-engine-name');
+  const pathEl = document.getElementById('new-engine-path');
+  const name = nameEl.value.trim();
+  const path = pathEl.value.trim();
+  if (!name || !path) { alert('Enter both engine name and path'); return; }
+  const engines = getEngines();
+  if (engines.some(e => e.name === name)) { alert('Engine with that name already exists'); return; }
+  engines.push({ name, path });
+  saveEngines(engines);
+  populateEngineSelects();
+  nameEl.value = '';
+  pathEl.value = '';
+}
+function removeEngine() {
+  const sel = document.getElementById('engine1');
+  const path = sel.value;
+  if (!path) { alert('Select an engine in the Engine 1 dropdown to remove'); return; }
+  const engines = getEngines().filter(e => e.path !== path);
+  saveEngines(engines);
+  populateEngineSelects();
+}
+
+let clockState = { wtime: 0, btime: 0, turn: 'white', localTs: null };
 let clockInterval = null;
+
+// Piece unicode maps
+const PIECE_UNICODE = {
+  wp: '\u2659', wn: '\u2658', wb: '\u2657', wr: '\u2656', wq: '\u2655',
+  bp: '\u265F', bn: '\u265E', bb: '\u265D', br: '\u265C', bq: '\u265B',
+};
+const PIECE_ORDER = ['q', 'r', 'b', 'n', 'p'];
+const START_MATERIAL = { p: 8, n: 2, b: 2, r: 2, q: 1 };
 
 function initBoard() {
   board = Chessboard('board', {
@@ -143,15 +287,11 @@ function formatClock(seconds) {
 }
 
 function getLiveClocks() {
-  let wt = clockState.wtime;
-  let bt = clockState.btime;
+  let wt = clockState.wtime, bt = clockState.btime;
   if (clockState.localTs && gameActive) {
     let elapsed = (Date.now() - clockState.localTs) / 1000;
-    if (clockState.turn === 'white') {
-      wt = Math.max(0, wt - elapsed);
-    } else {
-      bt = Math.max(0, bt - elapsed);
-    }
+    if (clockState.turn === 'white') wt = Math.max(0, wt - elapsed);
+    else bt = Math.max(0, bt - elapsed);
   }
   return { wt, bt };
 }
@@ -178,16 +318,13 @@ function startClockInterval() {
   if (clockInterval) clearInterval(clockInterval);
   clockInterval = setInterval(renderClocks, 100);
 }
-
 function stopClockInterval() {
   if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
 }
 
 function formatEvalHtml(evalStr) {
   if (!evalStr) return '<span class="eval-even">0.00</span>';
-  if (evalStr.startsWith('M')) {
-    return '<span class="eval-mate">' + evalStr + '</span>';
-  }
+  if (evalStr.indexOf('M') >= 0) return '<span class="eval-mate">' + evalStr + '</span>';
   let val = parseFloat(evalStr);
   if (isNaN(val)) return '<span class="eval-even">' + evalStr + '</span>';
   let cls = val > 0.15 ? 'eval-positive' : val < -0.15 ? 'eval-negative' : 'eval-even';
@@ -195,78 +332,363 @@ function formatEvalHtml(evalStr) {
 }
 
 function renderWdl(barId, textId, wdl) {
-  // wdl: [wins, draws, losses] from white's perspective, or null
   const bar = document.getElementById(barId);
   const text = document.getElementById(textId);
-  if (!wdl) {
-    bar.style.display = 'none';
-    text.textContent = '';
-    return;
-  }
+  if (!wdl) { bar.style.display = 'none'; text.textContent = ''; return; }
   bar.style.display = 'flex';
   let total = wdl[0] + wdl[1] + wdl[2];
   if (total === 0) total = 1;
-  let wp = (wdl[0] / total * 100);
-  let dp = (wdl[1] / total * 100);
-  let lp = (wdl[2] / total * 100);
+  let wp = (wdl[0] / total * 100), dp = (wdl[1] / total * 100), lp = (wdl[2] / total * 100);
   bar.innerHTML = '<div class="wdl-w" style="width:' + wp + '%"></div>' +
     '<div class="wdl-d" style="width:' + dp + '%"></div>' +
     '<div class="wdl-l" style="width:' + lp + '%"></div>';
   text.textContent = 'W ' + wp.toFixed(1) + '%  D ' + dp.toFixed(1) + '%  L ' + lp.toFixed(1) + '%';
 }
 
-function updateEngineInfo(engineInfo) {
-  // engineInfo: [{eval, pv, depth, wdl}, ...] for [white, black]
-  let topSide, bottomSide;
-  if (orientation === 'white') {
-    topSide = 1; bottomSide = 0;
-  } else {
-    topSide = 0; bottomSide = 1;
-  }
-  let topInfo = engineInfo[topSide];
-  let bottomInfo = engineInfo[bottomSide];
-
-  document.getElementById('eval-top').innerHTML = formatEvalHtml(topInfo.eval) +
-    ' <span class="engine-depth">d' + topInfo.depth + '</span>';
-  document.getElementById('pv-top').textContent = topInfo.pv || '';
-  renderWdl('wdl-bar-top', 'wdl-text-top', topInfo.wdl);
-
-  document.getElementById('eval-bottom').innerHTML = formatEvalHtml(bottomInfo.eval) +
-    ' <span class="engine-depth">d' + bottomInfo.depth + '</span>';
-  document.getElementById('pv-bottom').textContent = bottomInfo.pv || '';
-  renderWdl('wdl-bar-bottom', 'wdl-text-bottom', bottomInfo.wdl);
+function formatStats(nps, hashfull) {
+  let parts = [];
+  if (nps != null) parts.push((nps / 1000000).toFixed(1) + ' Mnps');
+  if (hashfull != null) parts.push('hash ' + (hashfull / 10).toFixed(0) + '%');
+  return parts.join('  ');
 }
 
-function updateThinkingSide(side, evalStr, pv, depth, wdl) {
-  // side: 0=white, 1=black
-  let pos;
-  if (orientation === 'white') {
-    pos = side === 1 ? 'top' : 'bottom';
-  } else {
-    pos = side === 0 ? 'top' : 'bottom';
-  }
-  document.getElementById('eval-' + pos).innerHTML = formatEvalHtml(evalStr) +
-    ' <span class="engine-depth">d' + depth + '</span>';
-  document.getElementById('pv-' + pos).textContent = pv || '';
-  renderWdl('wdl-bar-' + pos, 'wdl-text-' + pos, wdl);
+function sideToPos(side) {
+  if (orientation === 'white') return side === 1 ? 'top' : 'bottom';
+  return side === 0 ? 'top' : 'bottom';
 }
 
 function updateLabels() {
-  document.getElementById('top-label').textContent = orientation === 'white' ? 'Black (Engine 2)' : 'White (Engine 1)';
-  document.getElementById('bottom-label').textContent = orientation === 'white' ? 'White (Engine 1)' : 'Black (Engine 2)';
+  let topSide = orientation === 'white' ? 1 : 0;
+  let bottomSide = orientation === 'white' ? 0 : 1;
+  let topColor = orientation === 'white' ? 'Black' : 'White';
+  let bottomColor = orientation === 'white' ? 'White' : 'Black';
+  document.getElementById('top-label').textContent = topColor + ' - ' + engineNames[topSide];
+  document.getElementById('bottom-label').textContent = bottomColor + ' - ' + engineNames[bottomSide];
+  document.getElementById('pv-label-top').textContent = engineNames[topSide] + ' PV';
+  document.getElementById('pv-label-bottom').textContent = engineNames[bottomSide] + ' PV';
+}
+
+function updateEngineInfo(engineInfo) {
+  for (let side = 0; side < 2; side++) {
+    let pos = sideToPos(side);
+    let info = engineInfo[side];
+    document.getElementById('eval-' + pos).innerHTML = formatEvalHtml(info.eval) +
+      ' <span class="engine-depth">d' + info.depth + '</span>';
+    renderWdl('wdl-bar-' + pos, 'wdl-text-' + pos, info.wdl);
+    document.getElementById('stats-' + pos).textContent = formatStats(info.nps, info.hashfull);
+  }
+}
+
+function parseEvalNum(evalStr) {
+  if (!evalStr) return 0;
+  if (evalStr.indexOf('M') >= 0) {
+    let s = evalStr.replace('M', '');
+    let n = parseInt(s);
+    return n > 0 ? 999 : -999;
+  }
+  let v = parseFloat(evalStr);
+  return isNaN(v) ? 0 : v;
+}
+
+function updateThinkingSide(msg) {
+  let pos = sideToPos(msg.side);
+  document.getElementById('eval-' + pos).innerHTML = formatEvalHtml(msg.eval) +
+    ' <span class="engine-depth">d' + msg.depth + '</span>';
+  renderWdl('wdl-bar-' + pos, 'wdl-text-' + pos, msg.wdl);
+  document.getElementById('stats-' + pos).textContent = formatStats(msg.nps, msg.hashfull);
+
+  // Update thinking arrow (only when viewing live)
+  if (msg.pv_first_uci && isViewingLive()) {
+    thinkingMoveUci = msg.pv_first_uci;
+    drawArrows();
+  }
+
+  if (msg.pv_line) {
+    let el = document.getElementById('pv-history-' + pos);
+    // Use white-normalized eval, flip sign for black so positive = good for that engine
+    let evalWhite = parseEvalNum(msg.eval);
+    let curPov = msg.side === 0 ? evalWhite : -evalWhite;
+    let baseline = baselineEvalPov[msg.side];
+    let cls = 'neutral';
+    let prefix = '';
+    if (baseline !== null) {
+      let delta = curPov - baseline;
+      if (delta >= 0.5) { cls = 'improving'; prefix = '! '; }
+      else if (delta <= -0.5) { cls = 'worsening'; prefix = '? '; }
+    }
+
+    // Build meta line and moves line
+    let metaParts = ['d' + msg.depth, msg.eval];
+    if (msg.wdl) {
+      let total = msg.wdl[0] + msg.wdl[1] + msg.wdl[2];
+      if (total > 0) metaParts.push('W:' + (msg.wdl[0]*100/total).toFixed(0) + '% D:' + (msg.wdl[1]*100/total).toFixed(0) + '% L:' + (msg.wdl[2]*100/total).toFixed(0) + '%');
+    }
+    if (msg.nps != null) metaParts.push((msg.nps / 1000000).toFixed(1) + 'Mnps');
+    if (msg.hashfull != null) metaParts.push('hash:' + (msg.hashfull / 10).toFixed(0) + '%');
+
+    let entry = document.createElement('div');
+    entry.className = 'pv-entry ' + cls;
+    let meta = document.createElement('div');
+    meta.className = 'pv-meta';
+    meta.textContent = prefix + metaParts.join('  ');
+    let moves = document.createElement('div');
+    moves.className = 'pv-moves';
+    moves.textContent = msg.pv || '';
+    entry.appendChild(meta);
+    entry.appendChild(moves);
+    el.appendChild(entry);
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+function clearPvHistory(side, prevEval) {
+  let pos = sideToPos(side);
+  document.getElementById('pv-history-' + pos).innerHTML = '';
+  // Set baseline from white-normalized eval, flip for black
+  if (prevEval != null) {
+    let parsed = parseEvalNum(prevEval);
+    baselineEvalPov[side] = side === 0 ? parsed : -parsed;
+  }
+}
+
+// --- Arrows ---
+let lastMoveUci = null;
+let thinkingMoveUci = null; // first move of the current PV
+
+function makeArrowCoords(uci) {
+  if (!uci || uci.length < 4) return null;
+  let fromFile = uci.charCodeAt(0) - 97;
+  let fromRank = parseInt(uci[1]) - 1;
+  let toFile = uci.charCodeAt(2) - 97;
+  let toRank = parseInt(uci[3]) - 1;
+  let sq = 480 / 8;
+  let fromX, fromY, toX, toY;
+  if (orientation === 'white') {
+    fromX = fromFile * sq + sq / 2; fromY = (7 - fromRank) * sq + sq / 2;
+    toX = toFile * sq + sq / 2; toY = (7 - toRank) * sq + sq / 2;
+  } else {
+    fromX = (7 - fromFile) * sq + sq / 2; fromY = fromRank * sq + sq / 2;
+    toX = (7 - toFile) * sq + sq / 2; toY = toRank * sq + sq / 2;
+  }
+  let dx = toX - fromX, dy = toY - fromY;
+  let len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 10) return null;
+  let ux = dx / len, uy = dy / len;
+  return { x1: fromX, y1: fromY, x2: toX - ux * 4, y2: toY - uy * 4 };
+}
+
+function drawArrows() {
+  const svg = document.getElementById('arrow-svg');
+  let defs = '<defs>' +
+    '<marker id="ah-last" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
+    '<polygon points="0 0, 7 2.5, 0 5" fill="rgba(233,69,96,0.8)"/></marker>' +
+    '<marker id="ah-think" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
+    '<polygon points="0 0, 7 2.5, 0 5" fill="rgba(78,154,255,0.7)"/></marker>' +
+    '</defs>';
+  let lines = '';
+
+  // Thinking arrow (draw first so last move arrow is on top)
+  let tc = makeArrowCoords(thinkingMoveUci);
+  if (tc) {
+    lines += '<line x1="' + tc.x1 + '" y1="' + tc.y1 + '" x2="' + tc.x2 + '" y2="' + tc.y2 + '" ' +
+      'stroke="rgba(78,154,255,0.7)" stroke-width="5" stroke-linecap="round" marker-end="url(#ah-think)" opacity="0.7"/>';
+  }
+
+  // Last move arrow
+  let lc = makeArrowCoords(lastMoveUci);
+  if (lc) {
+    lines += '<line x1="' + lc.x1 + '" y1="' + lc.y1 + '" x2="' + lc.x2 + '" y2="' + lc.y2 + '" ' +
+      'stroke="rgba(233,69,96,0.8)" stroke-width="6" stroke-linecap="round" marker-end="url(#ah-last)"/>';
+  }
+
+  svg.innerHTML = defs + lines;
+}
+
+// --- Material imbalance ---
+function computeMaterial(fen) {
+  let placement = fen.split(' ')[0];
+  let count = { w: { p:0, n:0, b:0, r:0, q:0 }, b: { p:0, n:0, b:0, r:0, q:0 } };
+  for (let ch of placement) {
+    if (ch === '/') continue;
+    if (ch >= '1' && ch <= '8') continue;
+    let color = ch === ch.toUpperCase() ? 'w' : 'b';
+    let piece = ch.toLowerCase();
+    if (piece in count[color]) count[color][piece]++;
+  }
+  // Captured pieces: starting count minus current
+  let captured = { w: {}, b: {} };
+  for (let p of PIECE_ORDER) {
+    captured.w[p] = START_MATERIAL[p] - count.w[p]; // white pieces captured (by black)
+    captured.b[p] = START_MATERIAL[p] - count.b[p]; // black pieces captured (by white)
+  }
+  return captured;
+}
+
+function renderMaterial(fen) {
+  let captured = computeMaterial(fen);
+  // Top player shows pieces they captured (opponent's pieces)
+  // Bottom player shows pieces they captured
+  let topColor, bottomColor;
+  if (orientation === 'white') {
+    topColor = 'b'; bottomColor = 'w'; // top=black captured white's pieces; bottom=white captured black's pieces
+  } else {
+    topColor = 'w'; bottomColor = 'b';
+  }
+  // Top shelf: pieces the top player captured (from the bottom player's army)
+  let topCaptured = orientation === 'white' ? captured.w : captured.b; // white pieces captured by black (shown at top)
+  let bottomCaptured = orientation === 'white' ? captured.b : captured.w;
+
+  let topStr = '', bottomStr = '';
+  let topSideColor = orientation === 'white' ? 'b' : 'w';
+  let bottomSideColor = orientation === 'white' ? 'w' : 'b';
+
+  // Top player captured these pieces (from bottom player)
+  let bottomPieceColor = orientation === 'white' ? 'w' : 'b';
+  let topPieceColor = orientation === 'white' ? 'b' : 'w';
+  for (let p of PIECE_ORDER) {
+    for (let i = 0; i < topCaptured[p]; i++) topStr += PIECE_UNICODE[bottomPieceColor + p];
+  }
+  for (let p of PIECE_ORDER) {
+    for (let i = 0; i < bottomCaptured[p]; i++) bottomStr += PIECE_UNICODE[topPieceColor + p];
+  }
+
+  document.getElementById('material-top').textContent = topStr;
+  document.getElementById('material-bottom').textContent = bottomStr;
 }
 
 function renderMoves(moves) {
+  gameMoves = moves;
+  renderMoveList();
+}
+function renderMoveList() {
   const el = document.getElementById('moves');
+  const moves = gameMoves;
+  let activeIdx = isViewingLive() ? moves.length : viewIndex;
   let html = '';
   for (let i = 0; i < moves.length; i += 2) {
     let num = Math.floor(i / 2) + 1;
-    html += '<span class="move-number">' + num + '.</span> ' + moves[i];
-    if (i + 1 < moves.length) html += ' ' + moves[i + 1];
+    html += '<span class="move-number">' + num + '.</span> ';
+    let cls1 = (i + 1 === activeIdx) ? 'move-active' : '';
+    html += '<span class="move-link ' + cls1 + '" data-idx="' + (i + 1) + '">' + moves[i] + '</span>';
+    if (i + 1 < moves.length) {
+      let cls2 = (i + 2 === activeIdx) ? 'move-active' : '';
+      html += ' <span class="move-link ' + cls2 + '" data-idx="' + (i + 2) + '">' + moves[i + 1] + '</span>';
+    }
     html += '  ';
   }
   el.innerHTML = html;
-  el.scrollTop = el.scrollHeight;
+  // Scroll active move into view
+  let active = el.querySelector('.move-active');
+  if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  else el.scrollTop = el.scrollHeight;
+}
+
+function parseEvalForChart(evalStr) {
+  if (!evalStr) return null;
+  evalStr = evalStr.trim();
+  if (evalStr.startsWith('#') || evalStr.startsWith('M') || evalStr.startsWith('-M') || evalStr.startsWith('+M')) {
+    // Mate score — clamp to large value with correct sign
+    let sign = evalStr.includes('-') ? -1 : 1;
+    return sign * 15;
+  }
+  let v = parseFloat(evalStr);
+  return isNaN(v) ? null : v;
+}
+
+function drawEvalChart() {
+  const canvas = document.getElementById('eval-chart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+  const pad = { top: 10, bottom: 20, left: 45, right: 15 };
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Determine data range
+  let allEvals = [...evalHistory.white.map(d => d.eval), ...evalHistory.black.map(d => d.eval)];
+  let maxHalf = Math.max(
+    ...evalHistory.white.map(d => d.halfMove),
+    ...evalHistory.black.map(d => d.halfMove),
+    1
+  );
+  let maxEval = Math.max(3, ...allEvals.map(v => Math.abs(v)));
+  maxEval = Math.min(maxEval, 15); // clamp display
+
+  function toX(halfMove) { return pad.left + (halfMove / maxHalf) * plotW; }
+  function toY(ev) {
+    let clamped = Math.max(-maxEval, Math.min(maxEval, ev));
+    return pad.top + plotH / 2 - (clamped / maxEval) * (plotH / 2);
+  }
+
+  // Grid
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, toY(0));
+  ctx.lineTo(pad.left + plotW, toY(0));
+  ctx.stroke();
+
+  // Y-axis labels
+  ctx.fillStyle = '#666';
+  ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.textAlign = 'right';
+  for (let v of [-maxEval, -maxEval/2, 0, maxEval/2, maxEval]) {
+    let y = toY(v);
+    ctx.fillText((v > 0 ? '+' : '') + v.toFixed(1), pad.left - 5, y + 4);
+    if (v !== 0) {
+      ctx.strokeStyle = '#222';
+      ctx.beginPath();
+      ctx.moveTo(pad.left, y);
+      ctx.lineTo(pad.left + plotW, y);
+      ctx.stroke();
+    }
+  }
+
+  // X-axis labels (move numbers)
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#666';
+  let totalMoves = Math.ceil(maxHalf / 2);
+  let step = Math.max(1, Math.floor(totalMoves / 10));
+  for (let m = step; m <= totalMoves; m += step) {
+    let x = toX(m * 2 - 1); // approximate center of move
+    ctx.fillText(m.toString(), x, H - 4);
+  }
+
+  // Draw line for a side
+  function drawLine(data, color) {
+    if (data.length < 1) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    data.forEach((d, i) => {
+      let x = toX(d.halfMove);
+      let y = toY(d.eval);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    // Dots
+    ctx.fillStyle = color;
+    data.forEach(d => {
+      ctx.beginPath();
+      ctx.arc(toX(d.halfMove), toY(d.eval), 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  drawLine(evalHistory.white, '#e0e0e0');
+  drawLine(evalHistory.black, '#555');
+
+  // Axis border
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad.left, pad.top, plotW, plotH);
 }
 
 function connectWS() {
@@ -283,16 +705,43 @@ function connectWS() {
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'state') {
-      board.position(msg.fen, true);
-      // Update clock state for live ticking
+      // Store history for navigation
+      if (msg.fens) gameFens = msg.fens;
+      if (msg.moveUcis) gameMoveUcis = msg.moveUcis;
+
       clockState.wtime = msg.wtime;
       clockState.btime = msg.btime;
       clockState.turn = msg.turn;
       clockState.localTs = Date.now();
       renderClocks();
       renderMoves(msg.moves);
+      if (msg.engine_names) { engineNames = msg.engine_names; updateLabels(); }
       if (msg.engine_info) updateEngineInfo(msg.engine_info);
       if (msg.opening) document.getElementById('opening').textContent = msg.opening;
+
+      // Only update board/arrows/material if viewing live
+      if (isViewingLive()) {
+        board.position(msg.fen, true);
+        lastMoveUci = msg.lastMoveUci;
+        thinkingMoveUci = null;
+        setTimeout(drawArrows, 200);
+        renderMaterial(msg.fen);
+      }
+
+      // Record eval for chart
+      if (msg.engine_info && msg.moves && msg.moves.length > 0) {
+        let halfMove = msg.moves.length;
+        let justMoved = (halfMove % 2 === 1) ? 'white' : 'black';
+        let sideIdx = justMoved === 'white' ? 0 : 1;
+        let evalStr = msg.engine_info[sideIdx] && msg.engine_info[sideIdx].eval;
+        if (evalStr) {
+          let ev = parseEvalForChart(evalStr);
+          if (ev !== null) {
+            evalHistory[justMoved].push({ halfMove, eval: ev });
+            drawEvalChart();
+          }
+        }
+      }
       if (msg.result) {
         document.getElementById('result').textContent = msg.result;
         gameActive = false;
@@ -300,7 +749,9 @@ function connectWS() {
         document.getElementById('btn-start').disabled = false;
       }
     } else if (msg.type === 'thinking') {
-      updateThinkingSide(msg.side, msg.eval, msg.pv, msg.depth, msg.wdl);
+      updateThinkingSide(msg);
+    } else if (msg.type === 'new_move') {
+      clearPvHistory(msg.side, msg.prev_eval);
     } else if (msg.type === 'error') {
       document.getElementById('result').textContent = 'Error: ' + msg.message;
       gameActive = false;
@@ -312,13 +763,26 @@ function connectWS() {
 
 function startMatch() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  const engine1 = document.getElementById('engine1').value.trim();
-  const engine2 = document.getElementById('engine2').value.trim();
+  const engine1 = document.getElementById('engine1').value;
+  const engine2 = document.getElementById('engine2').value;
   const tc = document.getElementById('timecontrol').value.trim();
-  if (!engine1 || !engine2) { alert('Enter both engine paths'); return; }
+  if (!engine1 || !engine2) { alert('Select both engines'); return; }
   document.getElementById('result').textContent = '';
   document.getElementById('opening').textContent = '';
   document.getElementById('moves').innerHTML = '';
+  document.getElementById('pv-history-top').innerHTML = '';
+  document.getElementById('pv-history-bottom').innerHTML = '';
+  document.getElementById('material-top').textContent = '';
+  document.getElementById('material-bottom').textContent = '';
+  baselineEvalPov = [null, null];
+  evalHistory = { white: [], black: [] };
+  drawEvalChart();
+  gameFens = [];
+  gameMoves = [];
+  gameMoveUcis = [];
+  viewIndex = -1;
+  lastMoveUci = null;
+  document.getElementById('arrow-svg').innerHTML = '';
   gameActive = true;
   document.getElementById('btn-start').disabled = true;
   startClockInterval();
@@ -341,9 +805,21 @@ function flipBoard() {
   board.flip();
   updateLabels();
   renderClocks();
+  drawArrows();
+  let topEl = document.getElementById('pv-history-top');
+  let botEl = document.getElementById('pv-history-bottom');
+  let tmp = topEl.innerHTML;
+  topEl.innerHTML = botEl.innerHTML;
+  botEl.innerHTML = tmp;
+  // Swap material shelves too
+  let mt = document.getElementById('material-top').textContent;
+  let mb = document.getElementById('material-bottom').textContent;
+  document.getElementById('material-top').textContent = mb;
+  document.getElementById('material-bottom').textContent = mt;
 }
 
 $(document).ready(() => {
+  populateEngineSelects();
   initBoard();
   updateLabels();
   let parts = (document.getElementById('timecontrol').value || '3+0').split('+');
@@ -352,7 +828,39 @@ $(document).ready(() => {
   clockState.btime = base;
   clockState.turn = 'white';
   renderClocks();
+  drawEvalChart();
   connectWS();
+
+  // Click on moves in the move list
+  document.getElementById('moves').addEventListener('click', (e) => {
+    let el = e.target.closest('.move-link');
+    if (!el) return;
+    let idx = parseInt(el.dataset.idx);
+    if (!isNaN(idx)) navigateTo(idx);
+  });
+
+  // Arrow key navigation
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      let cur = isViewingLive() ? gameMoves.length : viewIndex;
+      if (cur > 0) navigateTo(cur - 1);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      let cur = isViewingLive() ? gameMoves.length : viewIndex;
+      if (cur < gameMoves.length) {
+        if (cur + 1 === gameMoves.length) goToLive();
+        else navigateTo(cur + 1);
+      }
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      navigateTo(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      goToLive();
+    }
+  });
 });
 </script>
 </body>
