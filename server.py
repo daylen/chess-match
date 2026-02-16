@@ -1,22 +1,34 @@
 import asyncio
 import json
+import logging
 import random
 import time
 from pathlib import Path
 
 import chess
 import chess.engine
+
+logging.basicConfig(level=logging.WARNING)
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-# Monkey-patch _parse_xboard_post to handle "..." (Black-to-move ellipsis)
-# that engines like Crafty include in their PV output.
+# Monkey-patch _parse_xboard_post to fix two Crafty issues:
+# 1. Strip "..." (Black-to-move ellipsis) from PV output
+# 2. Scores are from White's perspective, not the side to move's.
+#    python-chess wraps as PovScore(score, root_board.turn), which is wrong
+#    when Black is to move — it flips the sign. Re-wrap as WHITE.
 _original_parse_xboard_post = chess.engine._parse_xboard_post
 
 def _patched_parse_xboard_post(line, root_board, selector=chess.engine.INFO_ALL):
     line = line.replace(" ... ", " ")
-    return _original_parse_xboard_post(line, root_board, selector)
+    info = _original_parse_xboard_post(line, root_board, selector)
+    if "score" in info:
+        # The raw centipawn value from the line is in info["score"].relative.
+        # Re-wrap it as White's perspective since Crafty always reports from White's POV.
+        raw = info["score"].relative
+        info["score"] = chess.engine.PovScore(raw, chess.WHITE)
+    return info
 
 chess.engine._parse_xboard_post = _patched_parse_xboard_post
 
@@ -209,10 +221,13 @@ class Match:
 
             for i, eng in enumerate([engine1, engine2]):
                 if self.protocols[i] == "cecp":
-                    # CECP engines have unreliable option support (e.g. Crafty
-                    # crashes if memory is set too high). Skip auto-configuration
-                    # and let the engine use its defaults.
-                    pass
+                    # CECP: configure cores but skip memory (Crafty crashes
+                    # if memory is set too high via XBoard protocol).
+                    if "cores" in eng.options:
+                        try:
+                            await eng.configure({"cores": self.threads})
+                        except (chess.engine.EngineError, chess.engine.EngineTerminatedError):
+                            pass
                 else:
                     opts = {"Threads": self.threads, "Hash": self.hash_mb}
                     if "UCI_ShowWDL" in eng.options:
@@ -248,65 +263,79 @@ class Match:
                 )
 
                 is_cecp = self.protocols[side] == "cecp"
-                if is_cecp:
-                    # CECP analysis() doesn't support clock limits, so
-                    # compute a think time from the clocks (simple time
-                    # management: fraction of remaining + most of increment).
-                    my_clock = self.clocks[side]
-                    moves_to_go = 30
-                    think_time = max(0.1, my_clock / moves_to_go + self.increment * 0.9)
-                    # Don't use more than 50% of remaining time
-                    think_time = min(think_time, my_clock * 0.5)
-                    limit = chess.engine.Limit(time=think_time)
 
                 start = time.monotonic()
                 best_move = None
                 try:
-                    last_depth_sent = -1
-                    with await engine.analysis(self.board, limit) as analysis:
-                        async for info in analysis:
-                            if not self.running:
-                                break
-                            if "score" in info:
-                                self.engine_info[side]["eval"] = format_score_white(info["score"])
-                                self.engine_info[side]["eval_pov"] = format_score_pov(info["score"], side)
-                            if "pv" in info and len(info["pv"]) > 0:
-                                self.engine_info[side]["pv"] = pv_to_san(self.board, info["pv"])
-                                self.engine_info[side]["pv_first_uci"] = info["pv"][0].uci()
-                            if "depth" in info:
-                                self.engine_info[side]["depth"] = info["depth"]
-                            if "wdl" in info:
-                                wdl = info["wdl"]
-                                # Keep from engine's POV (relative)
-                                if hasattr(wdl, 'relative'):
-                                    r = wdl.relative
-                                    self.engine_info[side]["wdl"] = [r.wins, r.draws, r.losses]
-                                elif hasattr(wdl, 'white'):
-                                    # Fallback: convert to engine's POV
-                                    if side == 0:
-                                        w = wdl.white()
+                    if is_cecp:
+                        # CECP: use play() so the engine manages its own clock.
+                        # This gives better time management than analysis() with
+                        # a computed time limit. No live PV streaming, but we
+                        # send one thinking update from the final result.
+                        result = await engine.play(
+                            self.board, limit,
+                            info=chess.engine.INFO_ALL,
+                        )
+                        best_move = result.move
+                        info = result.info
+                        if "score" in info:
+                            self.engine_info[side]["eval"] = format_score_white(info["score"])
+                            self.engine_info[side]["eval_pov"] = format_score_pov(info["score"], side)
+                        if "pv" in info and len(info["pv"]) > 0:
+                            self.engine_info[side]["pv"] = pv_to_san(self.board, info["pv"])
+                            self.engine_info[side]["pv_first_uci"] = info["pv"][0].uci()
+                        if "depth" in info:
+                            self.engine_info[side]["depth"] = info["depth"]
+                        if "nps" in info:
+                            self.engine_info[side]["nps"] = info["nps"]
+                        try:
+                            await self.send_thinking(side)
+                        except Exception:
+                            pass
+                    else:
+                        # UCI: use analysis() for live streaming
+                        last_depth_sent = -1
+                        with await engine.analysis(self.board, limit) as analysis:
+                            async for info in analysis:
+                                if not self.running:
+                                    break
+                                if "score" in info:
+                                    self.engine_info[side]["eval"] = format_score_white(info["score"])
+                                    self.engine_info[side]["eval_pov"] = format_score_pov(info["score"], side)
+                                if "pv" in info and len(info["pv"]) > 0:
+                                    self.engine_info[side]["pv"] = pv_to_san(self.board, info["pv"])
+                                    self.engine_info[side]["pv_first_uci"] = info["pv"][0].uci()
+                                if "depth" in info:
+                                    self.engine_info[side]["depth"] = info["depth"]
+                                if "wdl" in info:
+                                    wdl = info["wdl"]
+                                    if hasattr(wdl, 'relative'):
+                                        r = wdl.relative
+                                        self.engine_info[side]["wdl"] = [r.wins, r.draws, r.losses]
+                                    elif hasattr(wdl, 'white'):
+                                        if side == 0:
+                                            w = wdl.white()
+                                        else:
+                                            w = wdl.black()
+                                        self.engine_info[side]["wdl"] = [w.wins, w.draws, w.losses]
                                     else:
-                                        w = wdl.black()
-                                    self.engine_info[side]["wdl"] = [w.wins, w.draws, w.losses]
-                                else:
-                                    self.engine_info[side]["wdl"] = list(wdl)
-                            if "nps" in info:
-                                self.engine_info[side]["nps"] = info["nps"]
-                            if "hashfull" in info:
-                                self.engine_info[side]["hashfull"] = info["hashfull"]
-                            # Only send one update per depth (main PV)
-                            cur_depth = self.engine_info[side]["depth"]
-                            if cur_depth > last_depth_sent and "pv" in info and "score" in info:
-                                last_depth_sent = cur_depth
-                                try:
-                                    await self.send_thinking(side)
-                                except Exception:
-                                    pass
-                            if best_move is not None:
-                                break
-                        best_move = analysis.info.get("pv", [None])[0] if "pv" in analysis.info else None
-                        if best_move is None and hasattr(analysis, 'best'):
-                            best_move = analysis.best.move if analysis.best else None
+                                        self.engine_info[side]["wdl"] = list(wdl)
+                                if "nps" in info:
+                                    self.engine_info[side]["nps"] = info["nps"]
+                                if "hashfull" in info:
+                                    self.engine_info[side]["hashfull"] = info["hashfull"]
+                                cur_depth = self.engine_info[side]["depth"]
+                                if cur_depth > last_depth_sent and "pv" in info and "score" in info:
+                                    last_depth_sent = cur_depth
+                                    try:
+                                        await self.send_thinking(side)
+                                    except Exception:
+                                        pass
+                                if best_move is not None:
+                                    break
+                            best_move = analysis.info.get("pv", [None])[0] if "pv" in analysis.info else None
+                            if best_move is None and hasattr(analysis, 'best'):
+                                best_move = analysis.best.move if analysis.best else None
                 except chess.engine.EngineTerminatedError as e:
                     import traceback
                     traceback.print_exc()

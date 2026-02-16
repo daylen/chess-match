@@ -176,6 +176,7 @@ button { padding: 10px 18px; border: none; border-radius: 6px; font-size: 14px; 
 <script>
 let board, ws, orientation = 'white', gameActive = false;
 let engineNames = ['Engine 1', 'Engine 2'];
+let lastEngineInfo = null;
 // Baseline POV eval per side — set from the engine's final eval on the *previous* move
 let baselineEvalPov = [null, null];
 
@@ -205,6 +206,7 @@ function navigateTo(idx) {
   renderMaterial(fen);
   renderMoveList();
   drawEvalChart();
+  showHistoricalEval(idx);
 }
 function goToLive() {
   viewIndex = -1;
@@ -222,6 +224,8 @@ function goToLive() {
   }
   renderMoveList();
   drawEvalChart();
+  // Restore live engine info display
+  if (lastEngineInfo) updateEngineInfo(lastEngineInfo);
 }
 
 // --- Engine preferences (localStorage) ---
@@ -402,6 +406,28 @@ function updateEngineInfo(engineInfo) {
       ' <span class="engine-depth">d' + info.depth + '</span>';
     renderWdl('wdl-bar-' + pos, 'wdl-text-' + pos, info.wdl);
     document.getElementById('stats-' + pos).textContent = formatStats(info.nps, info.hashfull);
+  }
+}
+
+function showHistoricalEval(halfMoveIdx) {
+  // Show the eval each engine had at this point in the game.
+  // halfMoveIdx: 0 = start (no evals), 1 = after White's 1st move, etc.
+  for (let side = 0; side < 2; side++) {
+    let pos = sideToPos(side);
+    let sideKey = side === 0 ? 'white' : 'black';
+    let data = evalHistory[sideKey];
+    // Find the last eval at or before this half-move
+    let entry = null;
+    for (let i = data.length - 1; i >= 0; i--) {
+      if (data[i].halfMove <= halfMoveIdx) { entry = data[i]; break; }
+    }
+    if (entry && entry.evalStr) {
+      document.getElementById('eval-' + pos).innerHTML = formatEvalHtml(entry.evalStr);
+    } else {
+      document.getElementById('eval-' + pos).innerHTML = '<span class="eval-even">0.00</span>';
+    }
+    renderWdl('wdl-bar-' + pos, 'wdl-text-' + pos, null);
+    document.getElementById('stats-' + pos).textContent = '';
   }
 }
 
@@ -799,6 +825,18 @@ function findNearestEval(halfMove) {
   canvas.addEventListener('mouseleave', function() {
     tooltip.style.display = 'none';
   });
+
+  canvas.addEventListener('click', function(e) {
+    let rect = canvas.getBoundingClientRect();
+    let mouseX = e.clientX - rect.left;
+    let halfMove = chartHalfMoveFromX(mouseX);
+    if (halfMove === null || halfMove < 1) return;
+    // Clamp to valid move range
+    halfMove = Math.max(1, Math.min(halfMove, gameMoves.length));
+    navigateTo(halfMove);
+  });
+
+  canvas.style.cursor = 'pointer';
 })();
 
 function connectWS() {
@@ -826,7 +864,10 @@ function connectWS() {
       renderClocks();
       renderMoves(msg.moves);
       if (msg.engine_names) { engineNames = msg.engine_names; updateLabels(); }
-      if (msg.engine_info) updateEngineInfo(msg.engine_info);
+      if (msg.engine_info) {
+        lastEngineInfo = msg.engine_info;
+        if (isViewingLive()) updateEngineInfo(msg.engine_info);
+      }
       if (msg.opening) document.getElementById('opening').textContent = msg.opening;
 
       // Only update board/arrows/material if viewing live
@@ -847,7 +888,7 @@ function connectWS() {
         if (evalStr) {
           let ev = parseEvalForChart(evalStr);
           if (ev !== null) {
-            evalHistory[justMoved].push({ halfMove, eval: ev });
+            evalHistory[justMoved].push({ halfMove, eval: ev, evalStr });
             drawEvalChart();
           }
         }
@@ -885,6 +926,7 @@ function startMatch() {
   document.getElementById('material-top').textContent = '';
   document.getElementById('material-bottom').textContent = '';
   baselineEvalPov = [null, null];
+  lastEngineInfo = null;
   evalHistory = { white: [], black: [] };
   drawEvalChart();
   gameFens = [];
